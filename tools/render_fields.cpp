@@ -75,7 +75,8 @@ public:
 
 private:
     static void writePNG(std::string path, std::unique_ptr<GLubyte[]> pixels, int width, int height) {
-        igl::stbi_write_png(path.c_str(), width, height, 4, pixels.get() + width * (height - 1) * 4, -width * 4);
+        // todo bring it back.
+        // igl::stbi_write_png(path.c_str(), width, height, 4, pixels.get() + width * (height - 1) * 4, -width * 4);
     };
 
     std::string pathPrefix;
@@ -264,8 +265,10 @@ int main(int argc, char **argv) {
     CapturePlugin capture;
     viewer.plugins.push_back(&capture);
 
+    igl::opengl::glfw::imgui::ImGuiPlugin plugin;
     igl::opengl::glfw::imgui::ImGuiMenu menu;
-    viewer.plugins.push_back(&menu);
+    viewer.plugins.push_back(&plugin);
+    plugin.widgets.push_back(&menu);
     menu.callback_draw_viewer_menu = [&]() {
         menu.draw_viewer_menu();
         ImGui::Begin("Mine");

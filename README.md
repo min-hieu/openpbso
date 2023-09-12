@@ -22,22 +22,18 @@ We recommend you to install libigl using git via:
     git submodule update --init --recursive
     cd ..
 
-## Compile
+## Build
 
-Compile this project using the standard cmake routine:
-
-    mkdir build
-    cd build
-    cmake ..
-    make
-
-This will create a binary named `real_time_modal_sound_bin`. C++11 or above is
-recommended.
-
-Since the code uses serialized data, it is recommended to run the protocol
-buffer compiler at the root directory:
+Since the code uses serialized data, run the protocol buffer compiler at the root directory:
 
     protoc --cpp_out=. ./ffat_map.proto
+
+Build and make this project using the standard cmake routine:
+
+    mkdir build && cd build && cmake ..
+    make
+
+This will create binaries named `real_time_modal_sound_bin` and `render_fields_bin`.
 
 ## Required runtime data
 
@@ -51,7 +47,7 @@ synthesis. You will need the following data files.
 ## Running the synthesizer
 
 There are two ways of loading the data files. If everything is named properly
-like the examples we provided, you can simply run
+like the [examples we provided](https://graphics.stanford.edu/projects/kleinpat/kleinpat-dataset/dataset_table.html), you can simply run
 
     ./real_time_modal_sound_bin -d <data_folder> -name <obj_name>
 
@@ -62,7 +58,19 @@ Alternatively, you can also specify each required files/folder:
 
     ./real_time_modal_sound_bin -m <obj_file> -s <modes_file> -t <material_file> -p <ffat_maps_folder>
 
-## Known issues
+### Full example
 
-#### `fatal error: 'google/protobuf/port_def.inc' file not found`
-This is likely due to older protoc version. Please try to upgrade the protocol buffer.
+1. [Build](#build) the `real_time_modal_sound_bin` binary.
+1. Download an object sound model from the [KleinPAT dataset](https://graphics.stanford.edu/projects/kleinpat/kleinpat-dataset/dataset_table.html), and unzip the directory.
+For this example, we will use the wine glass, which is called "00000" in this dataset.
+This example uses the `model_00000.zip` model, which is pre-downloaded in `model/model_00000.zip`.
+This zip file can be downloaded [here](https://graphics.stanford.edu/projects/kleinpat/kleinpat-dataset/data/release/v0.1/model_00000/model_00000.zip).
+1. Unzip the model.
+This example assumes you have unzipped `model/model_00000.zip` to `model/model_00000/`
+1. Run:
+    ```shell
+    cd build
+    ./real_time_modal_sound_bin -d ../model/model_00000 -name 00000
+    ```
+1. You should see the wine glass loaded in the viewer.
+Use `shift+click` anywhere on the object to trigger an impact force at the clicked surface triangle.

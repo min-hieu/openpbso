@@ -18,7 +18,7 @@
 #include "igl/file_dialog_open.h"
 #include "igl/colormap.h"
 #include "igl/png/readPNG.h"
-#include "imgui/imgui.h"
+#include "imgui.h"
 #include "config.h"
 #include "ModalMaterial.h"
 #include "ModeData.h"
@@ -567,8 +567,8 @@ int main(int argc, char **argv) {
         main_view = viewer.core_list[0].id;
         hud_view = viewer.core_list[1].id;
         mode_view = viewer.core_list[2].id;
-        viewer.core(hud_view).update_transform_matrices = false;
-        viewer.core(mode_view).update_transform_matrices = false;
+        // viewer.core(hud_view).update_transform_matrices = false;
+        // viewer.core(mode_view).update_transform_matrices = false;
         obj_id = viewer.data_list[0].id;
         sph_id = viewer.data_list[1].id;
         mod_id = viewer.data_list[2].id;
@@ -641,8 +641,10 @@ int main(int argc, char **argv) {
         return false;
     };
 
+    igl::opengl::glfw::imgui::ImGuiPlugin plugin;
     igl::opengl::glfw::imgui::ImGuiMenu menu;
-    viewer.plugins.push_back(&menu);
+    viewer.plugins.push_back(&plugin);
+    plugin.widgets.push_back(&menu);
     menu.callback_draw_viewer_menu = [&]()
     {
         // viewer menu

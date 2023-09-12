@@ -4,3 +4,7 @@ data
 *.pb.h
 assets
 /frontend
+.DS_Store
+.vscode
+model/**/**
+!model/*.zip
