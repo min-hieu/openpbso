@@ -1,82 +1,75 @@
-#include <thread>
-#include <string>
-#include <deque>
 #include <chrono>
-#include <mutex>
 #include <condition_variable>
+#include <deque>
+#include <mutex>
+#include <string>
+#include <thread>
 
-#include "igl/read_triangle_mesh.h"
-#include "igl/unproject_onto_mesh.h"
-#include "igl/per_vertex_normals.h"
-#include "igl/opengl/glfw/Viewer.h"
-#include "igl/opengl/glfw/imgui/ImGuiMenu.h"
-#include "igl/opengl/glfw/imgui/ImGuiHelpers.h"
+#include "igl/colormap.h"
+#include "igl/file_dialog_open.h"
 #include "igl/opengl/create_shader_program.h"
 #include "igl/opengl/destroy_shader_program.h"
-#include "igl/file_dialog_open.h"
-#include "igl/colormap.h"
+#include "igl/opengl/glfw/Viewer.h"
+#include "igl/opengl/glfw/imgui/ImGuiHelpers.h"
+#include "igl/opengl/glfw/imgui/ImGuiMenu.h"
+#include "igl/per_vertex_normals.h"
 #include "igl/png/readPNG.h"
+#include "igl/read_triangle_mesh.h"
+#include "igl/unproject_onto_mesh.h"
 
-#include "imgui.h"
-#include "config.h"
 #include "ModalMaterial.h"
 #include "ModeData.h"
 #include "cmd_parser.h"
-#include "portaudio.h"
+#include "config.h"
+#include "forces.h"
+#include "imgui.h"
 #include "io.h"
+#include "matcap_shader.h"
 #include "modal_integrator.h"
 #include "modal_solver.h"
-#include "forces.h"
-#include "matcap_shader.h"
+#include "portaudio.h"
 
-//##############################################################################
+// ##############################################################################
 static bool PA_STREAM_STARTED = false;
-//##############################################################################
-#define CHECK_PA_LAUNCH(x) \
-    { \
-        auto pa_err = x; \
-        if (pa_err != paNoError) \
-            printf("**ERROR** PortAudio error: %s\n", Pa_GetErrorText(pa_err));\
+// ##############################################################################
+#define CHECK_PA_LAUNCH(x)                                                      \
+    {                                                                           \
+        auto pa_err = x;                                                        \
+        if (pa_err != paNoError)                                                \
+            printf("**ERROR** PortAudio error: %s\n", Pa_GetErrorText(pa_err)); \
     }
-//##############################################################################
+// ##############################################################################
 cli::Parser *CreateParser(int argc, char **argv) {
     cli::Parser *parser = new cli::Parser(argc, argv);
     // hack to rewrite the help command
     parser->disable_help();
     parser->enable_help("**Usage:\n      Either input \"d\" and \"name\", or specify full path to \"m\", \"s\", \"t\", and \"p\".");
-    //parser->enable_help();
-    parser->set_optional<std::string>("d", "data_dir", FILE_NOT_EXIST,
-        "Data directory that contains the model");
-    parser->set_optional<std::string>("name", "obj_name", FILE_NOT_EXIST,
-        "Data object prefix name. e.g., wine");
-    parser->set_optional<std::string>("m", "mesh", FILE_NOT_EXIST,
-        "Triangle mesh for the object");
-    parser->set_optional<std::string>("s", "surf_mode", FILE_NOT_EXIST,
-        "surface modes file");
-    parser->set_optional<std::string>("t", "material", FILE_NOT_EXIST,
-        "modal material file");
-    parser->set_optional<std::string>("p", "ffat_map", FILE_NOT_EXIST,
-        "ffat map folder that contains *.fatcube files");
-    parser->set_optional<std::string>("tex", "obj_texture_map", FILE_NOT_EXIST,
-        "texture map used in matcaps shader program");
+    // parser->enable_help();
+    parser->set_optional<std::string>("d", "data_dir", FILE_NOT_EXIST, "Data directory that contains the model");
+    parser->set_optional<std::string>("name", "obj_name", FILE_NOT_EXIST, "Data object prefix name. e.g., wine");
+    parser->set_optional<std::string>("m", "mesh", FILE_NOT_EXIST, "Triangle mesh for the object");
+    parser->set_optional<std::string>("s", "surf_mode", FILE_NOT_EXIST, "surface modes file");
+    parser->set_optional<std::string>("t", "material", FILE_NOT_EXIST, "modal material file");
+    parser->set_optional<std::string>("p", "ffat_map", FILE_NOT_EXIST, "ffat map folder that contains *.fatcube files");
+    parser->set_optional<std::string>("tex", "obj_texture_map", FILE_NOT_EXIST, "texture map used in matcaps shader program");
     parser->run_and_exit_if_error();
     return parser;
 }
-//##############################################################################
+// ##############################################################################
 struct ViewerSettings {
     float volume = 1.0;
     bool useTransfer = true, useTransferCache = true;
     float bufferHealth[100] = {1.0f};
     int bufferHealthPtr = 0;
     static float renderFaceTime;
-    std::deque<std::pair<int,std::chrono::time_point<std::chrono::high_resolution_clock>>> activeFaceIds;
+    std::deque<std::pair<int, std::chrono::time_point<std::chrono::high_resolution_clock>>> activeFaceIds;
     ForceMessage<double> hitForceCache;
     int hitFidCache = 0, hitVidCache = 0;
     bool newHit = false;
     float transferBallNormalization = 0.45, transferBallBufThres = 200.;
     bool sustainedForceActive = false, useTextures = false, drawModes = false;
     int drawModeIdx = 0;
-    void incrementBufferHealthPtr() { bufferHealthPtr = (bufferHealthPtr+1)%100; }
+    void incrementBufferHealthPtr() { bufferHealthPtr = (bufferHealthPtr + 1) % 100; }
     int force_type_int = 0, old_force_type_int = 0;
     static ForceType forceType;
     struct GaussianForceParameters {
@@ -85,7 +78,7 @@ struct ViewerSettings {
     struct ARForceParameters {
         Eigen::Vector3d past_surf_pos, curr_surf_pos, curr_surf_vel;
         bool past_mouse_init = false;
-        double time_step_size = 1./60.;
+        double time_step_size = 1. / 60.;
         float mu_f = 0.142;
         float a_f[2] = {0.783, 0.116};
         float sigma_f = 0.00148;
@@ -121,15 +114,16 @@ struct ModalViewer {
     float zoom = 1.4f;
     void UpdateModeShape(
         const std::unique_ptr<ModeData<double>> &modes,
-        const int ind) {
+        const int ind
+    ) {
         if (this->ind != ind) {
             const auto &mode = modes->mode(ind);
-            Z.resize(mode.size()/3, 3);
-            Zv.resize(mode.size()/3);
-            for (int ii=0; ii<mode.size()/3; ++ii) {
-                Z(ii,0) = mode.at(ii*3    );
-                Z(ii,1) = mode.at(ii*3 + 1);
-                Z(ii,2) = mode.at(ii*3 + 2);
+            Z.resize(mode.size() / 3, 3);
+            Zv.resize(mode.size() / 3);
+            for (int ii = 0; ii < mode.size() / 3; ++ii) {
+                Z(ii, 0) = mode.at(ii * 3);
+                Z(ii, 1) = mode.at(ii * 3 + 1);
+                Z(ii, 2) = mode.at(ii * 3 + 2);
                 Zv(ii) = Z.row(ii).norm();
             }
             this->ind = ind;
@@ -139,21 +133,22 @@ struct ModalViewer {
 
 float ViewerSettings::renderFaceTime = 1.5f;
 ForceType ViewerSettings::forceType = ForceType::PointForce;
-//##############################################################################
+// ##############################################################################
 Eigen::Matrix<double, 3, 1> getCameraWorldPosition(igl::opengl::ViewerCore &core) {
     Eigen::Matrix<float, 4, 1> eye;
     eye << core.camera_eye, 1.0f;
     return (core.view.inverse() * eye).cast<double>().head(3);
 }
-//##############################################################################
+// ##############################################################################
 bool CurrentMouseSurfPos(
     igl::opengl::glfw::Viewer &viewer,
     const Eigen::MatrixXd &V,
     const Eigen::MatrixXi &F,
-    Eigen::Vector3d &pos, Eigen::Vector3d &coord, int &fid, int &vid) {
+    Eigen::Vector3d &pos, Eigen::Vector3d &coord, int &fid, int &vid
+) {
     const double x = viewer.current_mouse_x;
     const double y = viewer.core().viewport(3) - viewer.current_mouse_y;
-    if (igl::unproject_onto_mesh(Eigen::Vector2f(x,y), viewer.core().view, viewer.core().proj, viewer.core().viewport, V, F, fid, coord)) {
+    if (igl::unproject_onto_mesh(Eigen::Vector2f(x, y), viewer.core().view, viewer.core().proj, viewer.core().viewport, V, F, fid, coord)) {
         vid = F(fid, 0);
         float lar = coord[0];
         if (coord[1] > coord[0]) {
@@ -161,44 +156,38 @@ bool CurrentMouseSurfPos(
             lar = coord[1];
         }
         if (coord[2] > lar) vid = F(fid, 2);
-        pos = V.row(F(fid,0))*coord[0]
-            + V.row(F(fid,1))*coord[1]
-            + V.row(F(fid,2))*coord[2];
+        pos = V.row(F(fid, 0)) * coord[0] + V.row(F(fid, 1)) * coord[1] + V.row(F(fid, 2)) * coord[2];
         return true;
     }
     return false;
 }
-//##############################################################################
+// ##############################################################################
 struct PaModalData {
     std::unique_ptr<ModalSolver<double>> *solver;
     SoundMessage<double> soundMessage;
 };
-//##############################################################################
-int PaModalCallback(const void *inputBuffer,
-                    void *outputBuffer,
-                    unsigned long framesPerBuffer,
-                    const PaStreamCallbackTimeInfo* timeInfo,
-                    PaStreamCallbackFlags statusFlags,
-                    void *userData) {
+// ##############################################################################
+int PaModalCallback(const void *inputBuffer, void *outputBuffer, unsigned long framesPerBuffer, const PaStreamCallbackTimeInfo *timeInfo, PaStreamCallbackFlags statusFlags, void *userData) {
     /* Cast data passed through stream to our structure. */
-    PaModalData *data = (PaModalData*)userData;
-    float *out = (float*)outputBuffer;
+    PaModalData *data = (PaModalData *)userData;
+    float *out = (float *)outputBuffer;
     unsigned int i;
-    (void) inputBuffer; /* Prevent unused variable warning. */
+    (void)inputBuffer; /* Prevent unused variable warning. */
     bool success = (*(data->solver))->dequeueSoundMessage(data->soundMessage);
     VIEWER_SETTINGS.bufferHealth[VIEWER_SETTINGS.bufferHealthPtr] = (float)success;
     VIEWER_SETTINGS.incrementBufferHealthPtr();
-    for( i=0; i<framesPerBuffer; i++ ) {
-        *out++ = (float)(data->soundMessage.data(i)/1E10);
-        *out++ = (float)(data->soundMessage.data(i)/1E10);
+    for (i = 0; i < framesPerBuffer; i++) {
+        *out++ = (float)(data->soundMessage.data(i) / 1E10);
+        *out++ = (float)(data->soundMessage.data(i) / 1E10);
     }
     return 0;
 }
-//##############################################################################
+// ##############################################################################
 template<typename T>
 void GetModalForceCopy(
     const ForceMessage<T> &cache,
-    ForceMessage<T> &force) {
+    ForceMessage<T> &force
+) {
     // perform a deep copy
     force = cache;
     force.forceType = VIEWER_SETTINGS.forceType;
@@ -212,7 +201,7 @@ void GetModalForceCopy(
         assert(false && "Force type not defined");
     }
 }
-//##############################################################################
+// ##############################################################################
 template<typename T>
 void GetModalForceFace(
     const int forceDim,
@@ -220,13 +209,12 @@ void GetModalForceFace(
     const Eigen::Vector3i vids,
     const Eigen::Vector3d coords,
     const Eigen::Vector3d &vn, // NOTE: using the same vn for all three vids
-    ForceMessage<double> &force) {
+    ForceMessage<double> &force
+) {
     force.data.setZero(forceDim);
-    for (int mm=0; mm<forceDim; ++mm) {
-        for (int jj=0; jj<3; ++jj) {
-            force.data(mm) += vn[0]*modes.mode(mm).at(vids[jj]*3+0)*coords[jj]
-                            + vn[1]*modes.mode(mm).at(vids[jj]*3+1)*coords[jj]
-                            + vn[2]*modes.mode(mm).at(vids[jj]*3+2)*coords[jj];
+    for (int mm = 0; mm < forceDim; ++mm) {
+        for (int jj = 0; jj < 3; ++jj) {
+            force.data(mm) += vn[0] * modes.mode(mm).at(vids[jj] * 3 + 0) * coords[jj] + vn[1] * modes.mode(mm).at(vids[jj] * 3 + 1) * coords[jj] + vn[2] * modes.mode(mm).at(vids[jj] * 3 + 2) * coords[jj];
         }
     }
     force.forceType = VIEWER_SETTINGS.forceType;
@@ -240,19 +228,18 @@ void GetModalForceFace(
         assert(false && "Force type not defined");
     }
 }
-//##############################################################################
+// ##############################################################################
 template<typename T>
 void GetModalForceVertex(
     const int forceDim,
     const ModeData<T> &modes,
     const int vid,
     const Eigen::Vector3d &vn,
-    ForceMessage<double> &force) {
+    ForceMessage<double> &force
+) {
     force.data.setZero(forceDim);
-    for (int mm=0; mm<forceDim; ++mm) {
-        force.data(mm) = vn[0]*modes.mode(mm).at(vid*3+0)
-            + vn[1]*modes.mode(mm).at(vid*3+1)
-            + vn[2]*modes.mode(mm).at(vid*3+2);
+    for (int mm = 0; mm < forceDim; ++mm) {
+        force.data(mm) = vn[0] * modes.mode(mm).at(vid * 3 + 0) + vn[1] * modes.mode(mm).at(vid * 3 + 1) + vn[2] * modes.mode(mm).at(vid * 3 + 2);
     }
     force.forceType = VIEWER_SETTINGS.forceType;
     if (force.forceType == ForceType::PointForce) {
@@ -265,23 +252,24 @@ void GetModalForceVertex(
         assert(false && "Force type not defined");
     }
 }
-//##############################################################################
+// ##############################################################################
 template<typename T>
 ModalMaterial<T> *ReadMaterial(const char *filename) { return ModalMaterial<T>::Read(filename); }
-//##############################################################################
+// ##############################################################################
 template<typename T>
 ModeData<T> *ReadModes(const char *filename) {
     ModeData<T> *modes = new ModeData<T>();
     modes->read(filename);
     return modes;
 }
-//##############################################################################
+// ##############################################################################
 template<typename T>
 ModalSolver<T> *BuildSolver(
     const std::unique_ptr<ModalMaterial<T>> &material,
     const std::unique_ptr<ModeData<T>> &modes,
     const std::string &ffatMapFolder,
-    int &N_modesAudible) {
+    int &N_modesAudible
+) {
     // read max frequency to cull modes
     std::string maxFreqFile = ffatMapFolder + "/freq_threshold.txt";
     std::ifstream stream(maxFreqFile.c_str());
@@ -304,7 +292,7 @@ ModalSolver<T> *BuildSolver(
             modes->_omegaSquared,
             material->alpha,
             material->beta,
-            1./(double)SAMPLE_RATE,
+            1. / (double)SAMPLE_RATE,
             N_modesAudible
         )
     );
@@ -312,7 +300,7 @@ ModalSolver<T> *BuildSolver(
     solver->readFFATMaps(ffatMapFolder);
     return solver;
 }
-//##############################################################################
+// ##############################################################################
 void LoadNewModel(
     std::string &obj_file, std::string &mod_file, std::string &mat_file, std::string &fat_path,
     Eigen::MatrixXd &V, Eigen::MatrixXd &VN, Eigen::MatrixXi &F,
@@ -324,18 +312,19 @@ void LoadNewModel(
     igl::opengl::glfw::Viewer &viewer,
     std::unique_ptr<ModalMaterial<double>> &material,
     std::unique_ptr<ModeData<double>> &modes,
-    std::unique_ptr<ModalSolver<double>> &solver) {
+    std::unique_ptr<ModalSolver<double>> &solver
+) {
     std::string meta = igl::file_dialog_open();
     if (meta.length() != 0) {
-        if (meta.substr(meta.size()-4, 4) == ".png") {
+        if (meta.substr(meta.size() - 4, 4) == ".png") {
             const size_t last_slash = meta.find_last_of('/');
-            if (last_slash == std::string::npos || last_slash == meta.size()-1) return;
+            if (last_slash == std::string::npos || last_slash == meta.size() - 1) return;
 
             std::string prefix = meta.substr(0, last_slash);
-            std::string suffix = meta.substr(last_slash+1, meta.size());
+            std::string suffix = meta.substr(last_slash + 1, meta.size());
             std::cout << "prefix, suffix = " << prefix << " " << suffix << std::endl;
             prefix = prefix.substr(0, prefix.find_last_of('/'));
-            meta = prefix + "/" + suffix.substr(0, suffix.size()-4) + ".meta";
+            meta = prefix + "/" + suffix.substr(0, suffix.size() - 4) + ".meta";
         }
         std::cout << "loading new model " << meta << " ..." << std::flush;
         std::ifstream stream(meta.c_str());
@@ -370,7 +359,7 @@ void LoadNewModel(
             MODAL_VIEWER.F0 = F;
             MODAL_VIEWER.ind = -1;
             if (VIEWER_SETTINGS.useTextures) {
-                Eigen::Matrix<unsigned char,-1,-1> tex_R,tex_G,tex_B,tex_A;
+                Eigen::Matrix<unsigned char, -1, -1> tex_R, tex_G, tex_B, tex_A;
                 igl::png::readPNG(parser->get<std::string>("tex"), tex_R, tex_G, tex_B, tex_A);
                 viewer.data(obj_id).set_texture(tex_R, tex_G, tex_B, tex_A);
                 viewer.data(obj_id).set_face_based(false);
@@ -387,27 +376,28 @@ void LoadNewModel(
             material.reset(ReadMaterial<double>(mat_file.c_str()));
             modes.reset(ReadModes<double>(mod_file.c_str()));
             solver.reset(BuildSolver(material, modes, fat_path, N_modesAudible));
-            assert(modes->numDOF() == V.rows()*3 && "DOFs mismatch");
+            assert(modes->numDOF() == V.rows() * 3 && "DOFs mismatch");
             VIEWER_SETTINGS.Reinitialize();
             transfer_ball.setZero(N_modesAudible, V_ball.rows());
-            for (int ii=0; ii<V_ball.rows(); ++ii) {
+            for (int ii = 0; ii < V_ball.rows(); ++ii) {
                 pos = V_ball.row(ii);
                 solver->computeTransfer(pos, transfer_ball.data() + ii * N_modesAudible);
             }
             transfer_ball /= transfer_ball.maxCoeff();
-            transferVals = Eigen::VectorXd::Ones(transferVals.size())*0.1;
+            transferVals = Eigen::VectorXd::Ones(transferVals.size()) * 0.1;
             Eigen::MatrixXd C_ball;
             igl::colormap(igl::COLOR_MAP_TYPE_JET, transferVals, true, C_ball);
             viewer.data(sph_id).set_colors(C_ball);
             VIEWER_SETTINGS.loadingNewModel = false;
             VIEWER_SETTINGS.cvLoadingNewModel.notify_all();
-            std::cout << " OK\n" << std::flush;
+            std::cout << " OK\n"
+                      << std::flush;
         }
     }
 }
 
-//##############################################################################
-//##############################################################################
+// ##############################################################################
+// ##############################################################################
 int main(int argc, char **argv) {
     auto *parser = CreateParser(argc, argv);
     std::string obj_file, mod_file, mat_file, fat_path;
@@ -443,12 +433,12 @@ int main(int argc, char **argv) {
     // read modal materials and mode shapes
     std::unique_ptr<ModalMaterial<double>> material(ReadMaterial<double>(mat_file.c_str()));
     std::unique_ptr<ModeData<double>> modes(ReadModes<double>(mod_file.c_str()));
-    assert(modes->numDOF() == V.rows()*3 && "DOFs mismatch");
+    assert(modes->numDOF() == V.rows() * 3 && "DOFs mismatch");
     // build modal integrator and solver/scheduler
     int N_modesAudible;
     std::unique_ptr<ModalSolver<double>> solver(BuildSolver(material, modes, fat_path, N_modesAudible));
     // start a simulation thread and use max priority
-    std::thread threadSim([&](){
+    std::thread threadSim([&]() {
         while (!VIEWER_SETTINGS.terminated) {
             solver->step();
             std::unique_lock<std::mutex> lockLoad(VIEWER_SETTINGS.mutexLoadingNewModel);
@@ -466,14 +456,15 @@ int main(int argc, char **argv) {
     PaModalData paData;
     paData.solver = &solver;
     PaStream *stream;
-    CHECK_PA_LAUNCH(Pa_OpenDefaultStream(&stream,
-        0,                 /* no input channels */
-        2,                 /* stereo output */
-        paFloat32,         /* 32 bit floating point output */
-        SAMPLE_RATE,       /* audio sampling rate */
+    CHECK_PA_LAUNCH(Pa_OpenDefaultStream(
+        &stream, 0, /* no input channels */
+        2, /* stereo output */
+        paFloat32, /* 32 bit floating point output */
+        SAMPLE_RATE, /* audio sampling rate */
         FRAMES_PER_BUFFER, /* frames per buffer */
-        PaModalCallback,   /* audio callback function */
-        &paData ));        /* audio callback data */
+        PaModalCallback, /* audio callback function */
+        &paData
+    )); /* audio callback data */
 
     // Plot the mesh
     igl::opengl::glfw::Viewer viewer;
@@ -493,26 +484,26 @@ int main(int argc, char **argv) {
         obj_id = viewer.data_list[0].id;
         sph_id = viewer.data_list[1].id;
         mod_id = viewer.data_list[2].id;
-        viewer.data(mod_id).set_visible(false,main_view);
+        viewer.data(mod_id).set_visible(false, main_view);
         viewer.data(mod_id).set_visible(false, hud_view);
         viewer.data(mod_id).set_visible(true, mode_view);
-        viewer.data(sph_id).set_visible(false,main_view);
-        viewer.data(sph_id).set_visible(false,mode_view);
+        viewer.data(sph_id).set_visible(false, main_view);
+        viewer.data(sph_id).set_visible(false, mode_view);
         viewer.data(sph_id).set_visible(true, hud_view);
         viewer.data(obj_id).set_visible(false, hud_view);
-        viewer.data(obj_id).set_visible(false,mode_view);
+        viewer.data(obj_id).set_visible(false, mode_view);
         viewer.data(obj_id).set_visible(true, main_view);
         return false;
     };
 
     viewer.callback_post_resize = [&](igl::opengl::glfw::Viewer &v, int w, int h) {
         v.core(main_view).viewport = Eigen::Vector4f(0, 0, w, h);
-        v.core(hud_view).viewport = Eigen::Vector4f(w-480, 0, 480, 480);
-        v.core(mode_view).viewport = Eigen::Vector4f(w-600, h-600, 600, 600);
+        v.core(hud_view).viewport = Eigen::Vector4f(w - 480, 0, 480, 480);
+        v.core(mode_view).viewport = Eigen::Vector4f(w - 600, h - 600, 600, 600);
         return true;
     };
 
-    viewer.callback_mouse_down = [&](igl::opengl::glfw::Viewer& viewer, int, int modifier)->bool {
+    viewer.callback_mouse_down = [&](igl::opengl::glfw::Viewer &viewer, int, int modifier) -> bool {
         int fid, vid;
         Eigen::Vector3f bc;
         Eigen::Vector3d vn, pos, coord;
@@ -535,7 +526,7 @@ int main(int argc, char **argv) {
         return false;
     };
 
-    viewer.callback_mouse_up = [&](igl::opengl::glfw::Viewer &viewer, int, int)->bool {
+    viewer.callback_mouse_up = [&](igl::opengl::glfw::Viewer &viewer, int, int) -> bool {
         auto &ar_parm = VIEWER_SETTINGS.arForceParameters;
         ar_parm.curr_surf_vel.setZero();
         ForceMessage<double> force;
@@ -543,7 +534,7 @@ int main(int argc, char **argv) {
         solver->enqueueForceMessageNoFail(force);
         return false;
     };
-    viewer.callback_mouse_move = [&](igl::opengl::glfw::Viewer &viewer, int, int)->bool {
+    viewer.callback_mouse_move = [&](igl::opengl::glfw::Viewer &viewer, int, int) -> bool {
         if (!viewer.down) VIEWER_SETTINGS.arForceParameters.past_mouse_init = false;
         return VIEWER_SETTINGS.sustainedForceActive;
     };
@@ -554,13 +545,13 @@ int main(int argc, char **argv) {
     plugin.widgets.push_back(&menu);
     menu.callback_draw_viewer_menu = [&]() {
         // viewer menu
-        //menu.draw_viewer_menu();
+        // menu.draw_viewer_menu();
         // simulation menu
-        ImGui::SetNextWindowPos(ImVec2(0,0));
-        ImGui::SetNextWindowSize(ImVec2(250,0));
+        ImGui::SetNextWindowPos(ImVec2(0, 0));
+        ImGui::SetNextWindowSize(ImVec2(250, 0));
         ImGui::Begin("Simulation");
         auto extractLast = [](const std::string str, const std::string delim) {
-            return str.substr(str.rfind(delim)+1);
+            return str.substr(str.rfind(delim) + 1);
         };
         if (ImGui::Button("Load Model")) {
             LoadNewModel(
@@ -585,50 +576,76 @@ int main(int argc, char **argv) {
                 viewer,
                 material,
                 modes,
-                solver);
+                solver
+            );
         }
         if (ImGui::CollapsingHeader("Info", ImGuiTreeNodeFlags_DefaultOpen)) {
             if (ImGui::TreeNode("Geometry")) {
-                ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.8f,0.8f,0.8f,1.0f));
+                ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.8f, 0.8f, 0.8f, 1.0f));
                 ImGui::Columns(2, "mycolumns2", false);
-                ImGui::Text("Mesh file"); ImGui::NextColumn();
-                ImGui::Text("%s", extractLast(obj_file, "/").c_str()); ImGui::NextColumn();
-                ImGui::Text("#Vertices"); ImGui::NextColumn();
-                ImGui::Text("%d", (int)V.rows()); ImGui::NextColumn();
-                ImGui::Text("#Triangles"); ImGui::NextColumn();
-                ImGui::Text("%d", (int)F.rows()); ImGui::NextColumn();
+                ImGui::Text("Mesh file");
+                ImGui::NextColumn();
+                ImGui::Text("%s", extractLast(obj_file, "/").c_str());
+                ImGui::NextColumn();
+                ImGui::Text("#Vertices");
+                ImGui::NextColumn();
+                ImGui::Text("%d", (int)V.rows());
+                ImGui::NextColumn();
+                ImGui::Text("#Triangles");
+                ImGui::NextColumn();
+                ImGui::Text("%d", (int)F.rows());
+                ImGui::NextColumn();
                 ImGui::Columns(1);
                 ImGui::TreePop();
                 ImGui::PopStyleColor();
             }
             if (ImGui::TreeNode("Modal Info")) {
-                ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.8f,0.8f,0.8f,1.0f));
+                ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.8f, 0.8f, 0.8f, 1.0f));
                 ImGui::Columns(2, "mycolumns2", false);
-                ImGui::Text("Modes file"); ImGui::NextColumn();
-                ImGui::Text("%s", extractLast(mod_file, "/").c_str()); ImGui::NextColumn();
-                ImGui::Text("#Modes"); ImGui::NextColumn();
-                ImGui::Text("%d", modes->numModes()); ImGui::NextColumn();
-                ImGui::Text("#Audible modes"); ImGui::NextColumn();
-                ImGui::Text("%d", N_modesAudible); ImGui::NextColumn();
-                ImGui::Text("Material file"); ImGui::NextColumn();
-                ImGui::Text("%s", extractLast(mat_file, "/").c_str()); ImGui::NextColumn();
-                ImGui::Text("Density"); ImGui::NextColumn();
-                ImGui::Text("%.2f", material->density); ImGui::NextColumn();
-                ImGui::Text("Young's"); ImGui::NextColumn();
-                ImGui::Text("%.2e", material->youngsModulus); ImGui::NextColumn();
-                ImGui::Text("Poisson ratio"); ImGui::NextColumn();
-                ImGui::Text("%.2f", material->poissonRatio); ImGui::NextColumn();
-                ImGui::Text("alpha"); ImGui::NextColumn();
-                ImGui::Text("%.2f", material->alpha); ImGui::NextColumn();
-                ImGui::Text("beta"); ImGui::NextColumn();
-                ImGui::Text("%.2f", material->beta); ImGui::NextColumn();
+                ImGui::Text("Modes file");
+                ImGui::NextColumn();
+                ImGui::Text("%s", extractLast(mod_file, "/").c_str());
+                ImGui::NextColumn();
+                ImGui::Text("#Modes");
+                ImGui::NextColumn();
+                ImGui::Text("%d", modes->numModes());
+                ImGui::NextColumn();
+                ImGui::Text("#Audible modes");
+                ImGui::NextColumn();
+                ImGui::Text("%d", N_modesAudible);
+                ImGui::NextColumn();
+                ImGui::Text("Material file");
+                ImGui::NextColumn();
+                ImGui::Text("%s", extractLast(mat_file, "/").c_str());
+                ImGui::NextColumn();
+                ImGui::Text("Density");
+                ImGui::NextColumn();
+                ImGui::Text("%.2f", material->density);
+                ImGui::NextColumn();
+                ImGui::Text("Young's");
+                ImGui::NextColumn();
+                ImGui::Text("%.2e", material->youngsModulus);
+                ImGui::NextColumn();
+                ImGui::Text("Poisson ratio");
+                ImGui::NextColumn();
+                ImGui::Text("%.2f", material->poissonRatio);
+                ImGui::NextColumn();
+                ImGui::Text("alpha");
+                ImGui::NextColumn();
+                ImGui::Text("%.2f", material->alpha);
+                ImGui::NextColumn();
+                ImGui::Text("beta");
+                ImGui::NextColumn();
+                ImGui::Text("%.2f", material->beta);
+                ImGui::NextColumn();
                 ImGui::Columns(1);
                 ImGui::TreePop();
                 ImGui::PopStyleColor();
             }
         }
         if (ImGui::CollapsingHeader(
-            "Sound Model", ImGuiTreeNodeFlags_DefaultOpen)) {
+                "Sound Model", ImGuiTreeNodeFlags_DefaultOpen
+            )) {
             ImGui::Text("Impact Force Control:");
             ImGui::BeginChild("option", ImVec2(220, 220), true);
             if (ImGui::Button("Repeat hit")) {
@@ -677,7 +694,8 @@ int main(int argc, char **argv) {
             ImGui::SliderFloat("width", &VIEWER_SETTINGS.gaussianForceParameters.timeScale, 10.0f, 500.0f, "%.1f (us)");
             static int width_samples = 0;
             width_samples = std::max(1, (int)(VIEWER_SETTINGS.gaussianForceParameters.timeScale / 1000000. * SAMPLE_RATE));
-            ImGui::SameLine(); ImGui::Text("(%d)", width_samples);
+            ImGui::SameLine();
+            ImGui::Text("(%d)", width_samples);
             if (VIEWER_SETTINGS.forceType != ForceType::GaussianForce) {
                 ImGui::PopStyleVar();
             }
@@ -711,10 +729,11 @@ int main(int argc, char **argv) {
                 VIEWER_SETTINGS.bufferHealthPtr,
                 nullptr,
                 0.0f, 1.0f,
-                ImVec2(200, 40));
+                ImVec2(200, 40)
+            );
             ImGui::EndChild();
             const auto transfer = solver->getLatestTransfer();
-            const Eigen::Matrix<float,-1,1> hist = transfer.data.cast<float>() / transfer.data.array().abs().maxCoeff();
+            const Eigen::Matrix<float, -1, 1> hist = transfer.data.cast<float>() / transfer.data.array().abs().maxCoeff();
             ImGui::BeginChild("histogram", ImVec2(220, 160), true);
             ImGui::Checkbox("Enable FFAT transfer", &VIEWER_SETTINGS.useTransfer);
             if (VIEWER_SETTINGS.useTransfer !=
@@ -727,18 +746,17 @@ int main(int argc, char **argv) {
             ImGui::PlotHistogram("", hist.data(), solver->getLatestTransfer().data.size(), 0, nullptr, 0.0f, 1.0f, ImVec2(200, 80));
             ImGui::EndChild();
         }
-        if (ImGui::CollapsingHeader(
-            "Visualization", ImGuiTreeNodeFlags_DefaultOpen)) {
+        if (ImGui::CollapsingHeader("Visualization", ImGuiTreeNodeFlags_DefaultOpen)) {
             ImGui::BeginChild("TransferVis", ImVec2(220, 80), true);
             auto &mv = MODAL_VIEWER;
             if (ImGui::Button("Draw Modes")) {
                 VIEWER_SETTINGS.drawModes = !VIEWER_SETTINGS.drawModes;
             }
             ImGui::DragInt("Mode Idx", &(VIEWER_SETTINGS.drawModeIdx), 1.0f, 0, N_modesAudible);
-            if (ImGui::DragFloat("Scale Exponent", &(mv.scale_exp),0.2,-9,-3)) {
+            if (ImGui::DragFloat("Scale Exponent", &(mv.scale_exp), 0.2, -9, -3)) {
                 mv.scale = pow(10, mv.scale_exp);
             }
-            ImGui::DragFloat("Zoom", &(mv.zoom),0.1,0.1,10.0,0);
+            ImGui::DragFloat("Zoom", &(mv.zoom), 0.1, 0.1, 10.0, 0);
             ImGui::EndChild();
             ImGui::BeginChild("TransferVis", ImVec2(220, 80), true);
             ImGui::Text("\'Ball\' visualization parameters:");
@@ -749,9 +767,8 @@ int main(int argc, char **argv) {
         ImGui::End();
     };
 
-    Eigen::MatrixXd C = Eigen::MatrixXd::Constant(F.rows(),3,1);
     viewer.data().set_mesh(V, F);
-    viewer.data().set_colors(C);
+    viewer.data().set_colors(Eigen::MatrixXd::Constant(F.rows(), 3, 1));
     viewer.data().show_lines = false;
     viewer.data().set_face_based(true);
 
@@ -764,7 +781,7 @@ int main(int argc, char **argv) {
     viewer.data().set_mesh(V_ball, F_ball);
     viewer.data().show_lines = false;
     viewer.data().set_face_based(true);
-    viewer.data().set_colors(Eigen::RowVector3d(0,0,1));
+    viewer.data().set_colors(Eigen::RowVector3d(0, 0, 1));
     viewer.data().shininess = 500.0f;
 
     // preparing for the modal viewer draw
@@ -775,7 +792,7 @@ int main(int argc, char **argv) {
     viewer.data().set_mesh(V, F);
     viewer.data().show_lines = false;
     viewer.data().set_face_based(true);
-    viewer.data().set_colors(Eigen::RowVector3d(0,1,0));
+    viewer.data().set_colors(Eigen::RowVector3d(0, 1, 0));
 
     viewer.selected_data_index = 0;
     // get transfer values on the ball
@@ -784,9 +801,9 @@ int main(int argc, char **argv) {
     Eigen::MatrixXd C_ball;
     igl::colormap(igl::COLOR_MAP_TYPE_JET, transferVals, true, C_ball);
     transfer_ball.setZero(N_modesAudible, V_ball.rows());
-    for (int ii=0; ii<V_ball.rows(); ++ii) {
+    for (int ii = 0; ii < V_ball.rows(); ++ii) {
         pos = V_ball.row(ii);
-        solver->computeTransfer(pos, transfer_ball.data()+ii*N_modesAudible);
+        solver->computeTransfer(pos, transfer_ball.data() + ii * N_modesAudible);
     }
     transfer_ball /= transfer_ball.maxCoeff();
     viewer.callback_pre_draw = [&](igl::opengl::glfw::Viewer &viewer) {
@@ -794,7 +811,7 @@ int main(int argc, char **argv) {
 
         auto &queue = VIEWER_SETTINGS.activeFaceIds;
         auto &view_data = viewer.data();
-        for (auto it=queue.begin(); it!=queue.end(); ++it) {
+        for (auto it = queue.begin(); it != queue.end(); ++it) {
             const std::chrono::duration<float> diff = std::chrono::high_resolution_clock::now() - it->second;
             if (diff.count() > ViewerSettings::renderFaceTime) {
                 view_data.F_material_diffuse.row(it->first) << 1, 1, 1, 1;
@@ -820,10 +837,10 @@ int main(int argc, char **argv) {
                     break;
                 }
             }
-            transferVals = Eigen::VectorXd::Ones(transferVals.size())*0.1;
-            for (int ii=0; ii<V_ball.rows(); ++ii) {
+            transferVals = Eigen::VectorXd::Ones(transferVals.size()) * 0.1;
+            for (int ii = 0; ii < V_ball.rows(); ++ii) {
                 double &val = transferVals(ii);
-                val = 0.1*std::log10(power.dot(transfer_ball.col(ii)));
+                val = 0.1 * std::log10(power.dot(transfer_ball.col(ii)));
                 val /= VIEWER_SETTINGS.transferBallNormalization;
                 val = std::max(0.1, std::min(1.0, val));
             }
@@ -842,38 +859,38 @@ int main(int argc, char **argv) {
         if (VIEWER_SETTINGS.drawModes) {
             auto &mv = MODAL_VIEWER;
             mv.UpdateModeShape(modes, VIEWER_SETTINGS.drawModeIdx);
-            const double tmp = sqrt(modes->omegaSquared(mv.ind)/2000.);
-            mv.V = mv.V0 + mv.Z*mv.scale*cos(tmp*mv.time);
-            mv.time += 1./(tmp/(2.*3.14159))/24.;
-            igl::colormap(igl::COLOR_MAP_TYPE_PARULA,mv.Zv,true,mv.C);
+            const double tmp = sqrt(modes->omegaSquared(mv.ind) / 2000.);
+            mv.V = mv.V0 + mv.Z * mv.scale * cos(tmp * mv.time);
+            mv.time += 1. / (tmp / (2. * 3.14159)) / 24.;
+            igl::colormap(igl::COLOR_MAP_TYPE_PARULA, mv.Zv, true, mv.C);
             viewer.data(mod_id).set_mesh(mv.V, mv.F0);
             viewer.data(mod_id).set_colors(mv.C);
         }
         return false;
     };
 
-    viewer.callback_key_pressed = [&](igl::opengl::glfw::Viewer &viewer, unsigned int key, int mod)->bool {
-        if (key=='1') {
+    viewer.callback_key_pressed = [&](igl::opengl::glfw::Viewer &viewer, unsigned int key, int mod) -> bool {
+        if (key == '1') {
             VIEWER_SETTINGS.force_type_int = 0;
             return true;
-        } else if (key=='2') {
+        } else if (key == '2') {
             VIEWER_SETTINGS.force_type_int = 1;
             return true;
-        } else if (key=='3') {
+        } else if (key == '3') {
             VIEWER_SETTINGS.force_type_int = 2;
             return true;
-        } else if (key==']') {
-            VIEWER_SETTINGS.drawModeIdx = std::min(VIEWER_SETTINGS.drawModeIdx+1, N_modesAudible-1);
+        } else if (key == ']') {
+            VIEWER_SETTINGS.drawModeIdx = std::min(VIEWER_SETTINGS.drawModeIdx + 1, N_modesAudible - 1);
             return true;
-        } else if (key=='[') {
-            VIEWER_SETTINGS.drawModeIdx = std::max(VIEWER_SETTINGS.drawModeIdx-1, 0);
+        } else if (key == '[') {
+            VIEWER_SETTINGS.drawModeIdx = std::max(VIEWER_SETTINGS.drawModeIdx - 1, 0);
             return true;
-        } else if (key=='u' || key=='U') {
+        } else if (key == 'u' || key == 'U') {
             VIEWER_SETTINGS.useTextures = !VIEWER_SETTINGS.useTextures;
             viewer.data(obj_id).show_texture = VIEWER_SETTINGS.useTextures;
             viewer.data(obj_id).set_face_based(!VIEWER_SETTINGS.useTextures);
             return true;
-        } else if (key=='r' || key=='R') {
+        } else if (key == 'r' || key == 'R') {
             LoadNewModel(
                 obj_file, mod_file, mat_file, fat_path,
                 V, VN, F,
@@ -884,9 +901,10 @@ int main(int argc, char **argv) {
                 main_view, hud_view,
                 N_modesAudible,
                 parser,
-                viewer, material, modes, solver);
+                viewer, material, modes, solver
+            );
             return true;
-        } else if (key=='d' || key=='D') {
+        } else if (key == 'd' || key == 'D') {
             ForceMessage<double> force;
             GetModalForceCopy(VIEWER_SETTINGS.hitForceCache, force);
             solver->enqueueForceMessage(force);
@@ -918,7 +936,7 @@ int main(int argc, char **argv) {
                 }
                 ar_parm.past_surf_pos = ar_parm.curr_surf_pos;
                 vn = ar_parm.curr_surf_vel;
-                if (vn.norm() > 1E-10) vn/=vn.norm();
+                if (vn.norm() > 1E-10) vn /= vn.norm();
 
                 ForceMessage<double> force;
                 GetModalForceFace(N_modesAudible, *modes, vids, coords, vn, force);
@@ -934,8 +952,8 @@ int main(int argc, char **argv) {
             PA_STREAM_STARTED = true;
         }
         // update the transfer
-        static Eigen::Matrix<double,3,1> last_camera_pos;
-        const Eigen::Matrix<double,3,1> camera_pos = getCameraWorldPosition(viewer.core(main_view));
+        static Eigen::Matrix<double, 3, 1> last_camera_pos;
+        const Eigen::Matrix<double, 3, 1> camera_pos = getCameraWorldPosition(viewer.core(main_view));
         static bool cache_initialize = false;
         if (camera_pos != last_camera_pos || !cache_initialize) {
             solver->computeTransfer(camera_pos);
@@ -947,7 +965,7 @@ int main(int argc, char **argv) {
 
     if (parser->get<std::string>("tex") != FILE_NOT_EXIST) {
         VIEWER_SETTINGS.useTextures = true;
-        Eigen::Matrix<unsigned char,-1,-1> tex_R, tex_G, tex_B, tex_A;
+        Eigen::Matrix<unsigned char, -1, -1> tex_R, tex_G, tex_B, tex_A;
         igl::png::readPNG(parser->get<std::string>("tex"), tex_R, tex_G, tex_B, tex_A);
         viewer.data(obj_id).set_texture(tex_R, tex_G, tex_B, tex_A);
         viewer.data(obj_id).set_face_based(false);
@@ -966,7 +984,7 @@ int main(int argc, char **argv) {
     CHECK_PA_LAUNCH(Pa_CloseStream(stream));
     CHECK_PA_LAUNCH(Pa_Terminate());
     VIEWER_SETTINGS.terminated = true;
-    //threadSim.join(); // TODO: should join but may get trapped in
-    //solver->step() because of the no fail enqueue
+    // threadSim.join(); // TODO: should join but may get trapped in
+    // solver->step() because of the no fail enqueue
 }
-//##############################################################################
+// ##############################################################################

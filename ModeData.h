@@ -12,6 +12,8 @@
 #include <cmath>
 #include <fstream>
 #include <iostream>
+#include <cassert>
+
 //##############################################################################
 // ModeData: Simple data structure for storing modal displacements and
 //           frequencies
