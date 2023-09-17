@@ -316,7 +316,7 @@ ModalSolver<T> *BuildSolver(
 void LoadNewModel(
     std::string &obj_file, std::string &mod_file, std::string &mat_file, std::string &fat_path,
     Eigen::MatrixXd &V, Eigen::MatrixXd &VN, Eigen::MatrixXi &F,
-    Eigen::MatrixXd &transfer_ball, Eigen::MatrixXd &V_ball, Eigen::MatrixXd &C_ball, Eigen::VectorXd &transferVals, Eigen::Vector3d &pos,
+    Eigen::MatrixXd &transfer_ball, Eigen::MatrixXd &V_ball, Eigen::VectorXd &transferVals, Eigen::Vector3d &pos,
     int &obj_id, int &sph_id, int &mod_id,
     unsigned int &main_view, unsigned int &hud_view,
     int &N_modesAudible,
@@ -398,7 +398,8 @@ void LoadNewModel(
             }
             transfer_ball /= transfer_ball.maxCoeff();
             transferVals = Eigen::VectorXd::Ones(transferVals.size())*0.1;
-            igl::colormap(igl::COLOR_MAP_TYPE_JET,transferVals,true,C_ball);
+            Eigen::MatrixXd C_ball;
+            igl::colormap(igl::COLOR_MAP_TYPE_JET, transferVals, true, C_ball);
             viewer.data(sph_id).set_colors(C_ball);
             VIEWER_SETTINGS.loadingNewModel = false;
             VIEWER_SETTINGS.cvLoadingNewModel.notify_all();
@@ -406,6 +407,7 @@ void LoadNewModel(
         }
     }
 }
+
 //##############################################################################
 //##############################################################################
 int main(int argc, char **argv) {
@@ -434,7 +436,7 @@ int main(int argc, char **argv) {
         fat_path = parser->get<std::string>("p");
     }
     // read geometry
-    Eigen::MatrixXd V, VN, V_ball, C_ball, transfer_ball;
+    Eigen::MatrixXd V, VN, V_ball, transfer_ball;
     Eigen::MatrixXi F, F_ball;
     Eigen::Matrix<unsigned char,-1,-1> tex_R,tex_G,tex_B,tex_A;
     Eigen::VectorXd transferVals;
@@ -574,7 +576,6 @@ int main(int argc, char **argv) {
                 F,
                 transfer_ball,
                 V_ball,
-                C_ball,
                 transferVals,
                 pos,
                 obj_id,
@@ -787,7 +788,8 @@ int main(int argc, char **argv) {
     // get transfer values on the ball
     transferVals.setOnes(V_ball.rows());
     transferVals *= 0.1;
-    igl::colormap(igl::COLOR_MAP_TYPE_JET,transferVals,true,C_ball);
+    Eigen::MatrixXd C_ball;
+    igl::colormap(igl::COLOR_MAP_TYPE_JET, transferVals, true, C_ball);
     transfer_ball.setZero(N_modesAudible, V_ball.rows());
     for (int ii=0; ii<V_ball.rows(); ++ii) {
         pos = V_ball.row(ii);
@@ -798,17 +800,22 @@ int main(int argc, char **argv) {
         if (VIEWER_SETTINGS.loadingNewModel) return false;
 
         auto &queue = VIEWER_SETTINGS.activeFaceIds;
+        auto &view_data = viewer.data();
         for (auto it=queue.begin(); it!=queue.end(); ++it) {
             const std::chrono::duration<float> diff = std::chrono::high_resolution_clock::now() - it->second;
             if (diff.count() > ViewerSettings::renderFaceTime) {
-                C.row(it->first) << 1, 1, 1;
+                view_data.F_material_diffuse.row(it->first) << 1, 1, 1, 1;
                 queue.pop_front();
             } else {
-                const float blend = std::min(1.0f, std::max(0.0f, diff.count() / ViewerSettings::renderFaceTime));
-                C.row(it->first) << 1.f, blend, 1.f;
+                const float blend = std::clamp(diff.count() / ViewerSettings::renderFaceTime, 0.f, 1.f);
+                view_data.F_material_diffuse.row(it->first) << 1.f, blend, 1.f, 1.f;
             }
+
+            // view_data.F_material_ambient = ambient(view_data.F_material_diffuse);
+            // view_data.F_material_specular = specular(view_data.F_material_diffuse);
+            // view_data.dirty |= igl::opengl::MeshGL::DIRTY_DIFFUSE | igl::opengl::MeshGL::DIRTY_SPECULAR | igl::opengl::MeshGL::DIRTY_AMBIENT;
+            view_data.dirty |= igl::opengl::MeshGL::DIRTY_DIFFUSE;
         }
-        viewer.data().set_colors(C);
 
         // set ball color
         if (VIEWER_SETTINGS.newHit) {
@@ -827,9 +834,11 @@ int main(int argc, char **argv) {
                 val /= VIEWER_SETTINGS.transferBallNormalization;
                 val = std::max(0.1, std::min(1.0, val));
             }
+
+            Eigen::MatrixXd C_ball;
             igl::colormap(igl::COLOR_MAP_TYPE_JET, transferVals, true, C_ball);
+            viewer.data(1).set_colors(C_ball);
         }
-        viewer.data(1).set_colors(C_ball);
 
         // update mode viewer
         viewer.data(mod_id).set_visible(VIEWER_SETTINGS.drawModes, mode_view);
@@ -875,7 +884,7 @@ int main(int argc, char **argv) {
             LoadNewModel(
                 obj_file, mod_file, mat_file, fat_path,
                 V, VN, F,
-                transfer_ball, V_ball, C_ball,
+                transfer_ball, V_ball,
                 transferVals,
                 pos,
                 obj_id, sph_id, mod_id,
@@ -923,7 +932,6 @@ int main(int argc, char **argv) {
                 GetModalForceFace(N_modesAudible, *modes, vids, coords, vn, force);
                 solver->enqueueForceMessage(force);
                 VIEWER_SETTINGS.hitVidCache = vid;
-                viewer.data().set_colors(C);
             } else {
                 ar_parm.past_mouse_init = false;
             }
