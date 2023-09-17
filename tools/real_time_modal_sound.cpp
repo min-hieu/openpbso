@@ -204,14 +204,11 @@ void GetModalForceCopy(
     force.forceType = VIEWER_SETTINGS.forceType;
     if (force.forceType == ForceType::PointForce) {
         force.force.reset(new PointForce<T>());
-    }
-    else if (force.forceType == ForceType::GaussianForce) {
+    } else if (force.forceType == ForceType::GaussianForce) {
         force.force.reset(new GaussianForce<T>(VIEWER_SETTINGS.gaussianForceParameters.timeScale));
-    }
-    else if (force.forceType == ForceType::AutoregressiveForce) {
+    } else if (force.forceType == ForceType::AutoregressiveForce) {
         force.force.reset(new AutoregressiveForce<T>());
-    }
-    else {
+    } else {
         assert(false && "Force type not defined");
     }
 }
@@ -235,14 +232,11 @@ void GetModalForceFace(
     force.forceType = VIEWER_SETTINGS.forceType;
     if (force.forceType == ForceType::PointForce) {
         force.force.reset(new PointForce<T>());
-    }
-    else if (force.forceType == ForceType::GaussianForce) {
+    } else if (force.forceType == ForceType::GaussianForce) {
         force.force.reset(new GaussianForce<T>(VIEWER_SETTINGS.gaussianForceParameters.timeScale));
-    }
-    else if (force.forceType == ForceType::AutoregressiveForce) {
+    } else if (force.forceType == ForceType::AutoregressiveForce) {
         force.force.reset(new AutoregressiveForce<T>());
-    }
-    else {
+    } else {
         assert(false && "Force type not defined");
     }
 }
@@ -263,14 +257,11 @@ void GetModalForceVertex(
     force.forceType = VIEWER_SETTINGS.forceType;
     if (force.forceType == ForceType::PointForce) {
         force.force.reset(new PointForce<T>());
-    }
-    else if (force.forceType == ForceType::GaussianForce) {
+    } else if (force.forceType == ForceType::GaussianForce) {
         force.force.reset(new GaussianForce<T>(VIEWER_SETTINGS.gaussianForceParameters.timeScale));
-    }
-    else if (force.forceType == ForceType::AutoregressiveForce) {
+    } else if (force.forceType == ForceType::AutoregressiveForce) {
         force.force.reset(new AutoregressiveForce<T>());
-    }
-    else {
+    } else {
         assert(false && "Force type not defined");
     }
 }
@@ -390,8 +381,7 @@ void LoadNewModel(
                 viewer.data(obj_id).meshgl.init();
                 igl::opengl::destroy_shader_program(viewer.data(obj_id).meshgl.shader_mesh);
                 igl::opengl::create_shader_program(mesh_vertex_shader_string, mesh_fragment_shader_string, {}, viewer.data(obj_id).meshgl.shader_mesh);
-            }
-            else {
+            } else {
                 viewer.data(obj_id).show_lines = false;
                 viewer.data(obj_id).set_face_based(true);
             }
@@ -444,7 +434,7 @@ int main(int argc, char **argv) {
         fat_path = parser->get<std::string>("p");
     }
     // read geometry
-    Eigen::MatrixXd V, C, VN, V_ball, C_ball, transfer_ball;
+    Eigen::MatrixXd V, VN, V_ball, C_ball, transfer_ball;
     Eigen::MatrixXi F, F_ball;
     Eigen::Matrix<unsigned char,-1,-1> tex_R,tex_G,tex_B,tex_A;
     Eigen::VectorXd transferVals;
@@ -489,6 +479,7 @@ int main(int argc, char **argv) {
     // Plot the mesh
     igl::opengl::glfw::Viewer viewer;
     viewer.core().is_animating = true;
+
     unsigned int main_view, hud_view, mode_view;
     int obj_id, sph_id, mod_id;
     viewer.callback_init = [&](igl::opengl::glfw::Viewer &viewer) {
@@ -514,39 +505,37 @@ int main(int argc, char **argv) {
         viewer.data(obj_id).set_visible(true, main_view);
         return false;
     };
+
     viewer.callback_post_resize = [&](igl::opengl::glfw::Viewer &v, int w, int h) {
         v.core(main_view).viewport = Eigen::Vector4f(0, 0, w, h);
         v.core(hud_view).viewport = Eigen::Vector4f(w-480, 0, 480, 480);
         v.core(mode_view).viewport = Eigen::Vector4f(w-600, h-600, 600, 600);
         return true;
     };
-    C = Eigen::MatrixXd::Constant(F.rows(),3,1);
-    viewer.callback_mouse_down =
-        [&](
-            igl::opengl::glfw::Viewer& viewer, int, int modifier)->bool {
-            int fid, vid;
-            Eigen::Vector3f bc;
-            Eigen::Vector3d vn, pos, coord;
-            // Cast a ray in the view direction starting from the mouse
-            // position
-            if (CurrentMouseSurfPos(viewer, V, F, pos, coord, fid, vid)) {
-                VIEWER_SETTINGS.arForceParameters.curr_surf_pos = pos;
-                if (modifier == GLFW_MOD_SHIFT) {
-                    VIEWER_SETTINGS.activeFaceIds.push_back({fid,std::chrono::high_resolution_clock::now()});
-                    vn = VN.row(vid).normalized();
-                    ForceMessage<double> force;
-                    GetModalForceVertex(N_modesAudible, *modes, vid, vn, force);
-                    solver->enqueueForceMessage(force);
-                    VIEWER_SETTINGS.hitForceCache = force;
-                    VIEWER_SETTINGS.hitFidCache = fid;
-                    if (VIEWER_SETTINGS.hitVidCache != vid) VIEWER_SETTINGS.newHit = true;
-                    VIEWER_SETTINGS.hitVidCache = vid;
-                    viewer.data().set_colors(C);
-                    return true;
-                }
+
+    viewer.callback_mouse_down = [&](igl::opengl::glfw::Viewer& viewer, int, int modifier)->bool {
+        int fid, vid;
+        Eigen::Vector3f bc;
+        Eigen::Vector3d vn, pos, coord;
+        // Cast a ray in the view direction starting from the mouse position.
+        if (CurrentMouseSurfPos(viewer, V, F, pos, coord, fid, vid)) {
+            VIEWER_SETTINGS.arForceParameters.curr_surf_pos = pos;
+            if (modifier == GLFW_MOD_SHIFT) {
+                VIEWER_SETTINGS.activeFaceIds.push_back({fid, std::chrono::high_resolution_clock::now()});
+                vn = VN.row(vid).normalized();
+                ForceMessage<double> force;
+                GetModalForceVertex(N_modesAudible, *modes, vid, vn, force);
+                solver->enqueueForceMessage(force);
+                VIEWER_SETTINGS.hitForceCache = force;
+                VIEWER_SETTINGS.hitFidCache = fid;
+                if (VIEWER_SETTINGS.hitVidCache != vid) VIEWER_SETTINGS.newHit = true;
+                VIEWER_SETTINGS.hitVidCache = vid;
+                return true;
             }
-            return false;
-        };
+        }
+        return false;
+    };
+
     viewer.callback_mouse_up = [&](igl::opengl::glfw::Viewer &viewer, int, int)->bool {
         auto &ar_parm = VIEWER_SETTINGS.arForceParameters;
         ar_parm.curr_surf_vel.setZero();
@@ -766,6 +755,7 @@ int main(int argc, char **argv) {
         ImGui::End();
     };
 
+    Eigen::MatrixXd C = Eigen::MatrixXd::Constant(F.rows(),3,1);
     viewer.data().set_mesh(V, F);
     viewer.data().set_colors(C);
     viewer.data().show_lines = false;
@@ -804,189 +794,156 @@ int main(int argc, char **argv) {
         solver->computeTransfer(pos, transfer_ball.data()+ii*N_modesAudible);
     }
     transfer_ball /= transfer_ball.maxCoeff();
-    viewer.callback_pre_draw =
-        [&](igl::opengl::glfw::Viewer &viewer) {
-            if (VIEWER_SETTINGS.loadingNewModel) return false;
-            auto &queue = VIEWER_SETTINGS.activeFaceIds;
-            while (!queue.empty()) {
-                const auto front = queue.front();
-                const std::chrono::duration<float> diff = std::chrono::high_resolution_clock::now() - front.second;
-                if (diff.count() > ViewerSettings::renderFaceTime) {
-                    C.row(front.first)<<1,1,1;
-                    queue.pop_front();
-                } else {
+    viewer.callback_pre_draw = [&](igl::opengl::glfw::Viewer &viewer) {
+        if (VIEWER_SETTINGS.loadingNewModel) return false;
+
+        auto &queue = VIEWER_SETTINGS.activeFaceIds;
+        for (auto it=queue.begin(); it!=queue.end(); ++it) {
+            const std::chrono::duration<float> diff = std::chrono::high_resolution_clock::now() - it->second;
+            if (diff.count() > ViewerSettings::renderFaceTime) {
+                C.row(it->first) << 1, 1, 1;
+                queue.pop_front();
+            } else {
+                const float blend = std::min(1.0f, std::max(0.0f, diff.count() / ViewerSettings::renderFaceTime));
+                C.row(it->first) << 1.f, blend, 1.f;
+            }
+        }
+        viewer.data().set_colors(C);
+
+        // set ball color
+        if (VIEWER_SETTINGS.newHit) {
+            Eigen::VectorXd power;
+            for (int ite = 0; ite < 5; ite++) {
+                power = solver->getQBufferNorm();
+                if (power.norm() > VIEWER_SETTINGS.transferBallBufThres) {
+                    VIEWER_SETTINGS.newHit = false;
                     break;
                 }
             }
-            C = Eigen::MatrixXd::Constant(F.rows(),3,1);
-            for (auto it=queue.begin(); it!=queue.end(); ++it) {
-                const std::chrono::duration<float> diff = std::chrono::high_resolution_clock::now() - it->second;
-                if (diff.count() > ViewerSettings::renderFaceTime) {
-                    C.row(it->first)<<1,1,1;
-                } else {
-                    const float blend = std::min(1.0f, std::max(0.0f, diff.count() / ViewerSettings::renderFaceTime));
-                    C.row(it->first)<<1.f,blend,1.f;
-                }
+            transferVals = Eigen::VectorXd::Ones(transferVals.size())*0.1;
+            for (int ii=0; ii<V_ball.rows(); ++ii) {
+                double &val = transferVals(ii);
+                val = 0.1*std::log10(power.dot(transfer_ball.col(ii)));
+                val /= VIEWER_SETTINGS.transferBallNormalization;
+                val = std::max(0.1, std::min(1.0, val));
             }
-            viewer.data().set_colors(C);
-            // set ball color
-            if (VIEWER_SETTINGS.newHit) {
-                Eigen::VectorXd power;
-                int ite = 0;
-                while (ite++ < 5) {
-                    power = solver->getQBufferNorm();
-                    if (power.norm() > VIEWER_SETTINGS.transferBallBufThres) {
-                        VIEWER_SETTINGS.newHit = false;
-                        break;
-                    }
-                }
-                transferVals = Eigen::VectorXd::Ones(transferVals.size())*0.1;
-                for (int ii=0; ii<V_ball.rows(); ++ii) {
-                    double &val = transferVals(ii);
-                    val = 0.1*std::log10(power.dot(transfer_ball.col(ii)));
-                    val /= VIEWER_SETTINGS.transferBallNormalization;
-                    val = std::max(0.1, std::min(1.0, val));
-                }
-                igl::colormap(igl::COLOR_MAP_TYPE_JET,transferVals,true,C_ball);
-            }
-            viewer.data(1).set_colors(C_ball);
-            // update mode viewer
-            viewer.data(mod_id).set_visible(VIEWER_SETTINGS.drawModes, mode_view);
-            std::unique_lock<std::mutex> lockLoad(VIEWER_SETTINGS.mutexLoadingNewModel);
-            while (VIEWER_SETTINGS.loadingNewModel) {
-                VIEWER_SETTINGS.cvLoadingNewModel.wait(lockLoad);
-            }
-            if (VIEWER_SETTINGS.drawModes) {
-                auto &mv = MODAL_VIEWER;
-                mv.UpdateModeShape(modes, VIEWER_SETTINGS.drawModeIdx);
-                const double tmp = sqrt(modes->omegaSquared(mv.ind)/2000.);
-                mv.V = mv.V0 + mv.Z*mv.scale*cos(tmp*mv.time);
-                mv.time += 1./(tmp/(2.*3.14159))/24.;
-                igl::colormap(igl::COLOR_MAP_TYPE_PARULA,mv.Zv,true,mv.C);
-                viewer.data(mod_id).set_mesh(mv.V, mv.F0);
-                viewer.data(mod_id).set_colors(mv.C);
-            }
-            return false;
-        };
-    viewer.callback_key_pressed = [&](
-        igl::opengl::glfw::Viewer &viewer, unsigned int key, int mod)->bool {
-        bool used = false;
+            igl::colormap(igl::COLOR_MAP_TYPE_JET, transferVals, true, C_ball);
+        }
+        viewer.data(1).set_colors(C_ball);
+
+        // update mode viewer
+        viewer.data(mod_id).set_visible(VIEWER_SETTINGS.drawModes, mode_view);
+        std::unique_lock<std::mutex> lockLoad(VIEWER_SETTINGS.mutexLoadingNewModel);
+        while (VIEWER_SETTINGS.loadingNewModel) {
+            VIEWER_SETTINGS.cvLoadingNewModel.wait(lockLoad);
+        }
+        if (VIEWER_SETTINGS.drawModes) {
+            auto &mv = MODAL_VIEWER;
+            mv.UpdateModeShape(modes, VIEWER_SETTINGS.drawModeIdx);
+            const double tmp = sqrt(modes->omegaSquared(mv.ind)/2000.);
+            mv.V = mv.V0 + mv.Z*mv.scale*cos(tmp*mv.time);
+            mv.time += 1./(tmp/(2.*3.14159))/24.;
+            igl::colormap(igl::COLOR_MAP_TYPE_PARULA,mv.Zv,true,mv.C);
+            viewer.data(mod_id).set_mesh(mv.V, mv.F0);
+            viewer.data(mod_id).set_colors(mv.C);
+        }
+        return false;
+    };
+
+    viewer.callback_key_pressed = [&](igl::opengl::glfw::Viewer &viewer, unsigned int key, int mod)->bool {
         if (key=='1') {
             VIEWER_SETTINGS.force_type_int = 0;
-            used = true;
-        }
-        else if (key=='2') {
+            return true;
+        } else if (key=='2') {
             VIEWER_SETTINGS.force_type_int = 1;
-            used = true;
-        }
-        else if (key=='3') {
+            return true;
+        } else if (key=='3') {
             VIEWER_SETTINGS.force_type_int = 2;
-            used = true;
-        }
-        else if (key==']') {
+            return true;
+        } else if (key==']') {
             VIEWER_SETTINGS.drawModeIdx = std::min(VIEWER_SETTINGS.drawModeIdx+1, N_modesAudible-1);
-            used = true;
-        }
-        else if (key=='[') {
+            return true;
+        } else if (key=='[') {
             VIEWER_SETTINGS.drawModeIdx = std::max(VIEWER_SETTINGS.drawModeIdx-1, 0);
-            used = true;
-        }
-        else if (key=='u' || key=='U') {
+            return true;
+        } else if (key=='u' || key=='U') {
             VIEWER_SETTINGS.useTextures = !VIEWER_SETTINGS.useTextures;
             viewer.data(obj_id).show_texture = VIEWER_SETTINGS.useTextures;
             viewer.data(obj_id).set_face_based(!VIEWER_SETTINGS.useTextures);
-            used = true;
-        }
-        else if (key=='r' || key=='R') {
+            return true;
+        } else if (key=='r' || key=='R') {
             LoadNewModel(
-                obj_file,
-                mod_file,
-                mat_file,
-                fat_path,
-                V,
-                VN,
-                F,
-                transfer_ball,
-                V_ball,
-                C_ball,
+                obj_file, mod_file, mat_file, fat_path,
+                V, VN, F,
+                transfer_ball, V_ball, C_ball,
                 transferVals,
                 pos,
-                obj_id,
-                sph_id,
-                mod_id,
-                main_view,
-                hud_view,
+                obj_id, sph_id, mod_id,
+                main_view, hud_view,
                 N_modesAudible,
                 parser,
-                tex_R,
-                tex_G,
-                tex_B,
-                tex_A,
-                viewer,
-                material,
-                modes,
-                solver);
-            used = true;
-        }
-        else if (key=='d' || key=='D') {
+                tex_R, tex_G, tex_B, tex_A,
+                viewer, material, modes, solver);
+            return true;
+        } else if (key=='d' || key=='D') {
             ForceMessage<double> force;
             GetModalForceCopy(VIEWER_SETTINGS.hitForceCache, force);
             solver->enqueueForceMessage(force);
             VIEWER_SETTINGS.activeFaceIds.push_back({VIEWER_SETTINGS.hitFidCache, std::chrono::high_resolution_clock::now()});
+            return true;
         }
-        return used;
+        return false;
     };
-    viewer.callback_post_draw = [&](
-        igl::opengl::glfw::Viewer &viewer) {
-            if (VIEWER_SETTINGS.loadingNewModel) return false;
 
-            // detect sustained force stuff with mouse
-            if (VIEWER_SETTINGS.sustainedForceActive &&
-                viewer.down) {
-                auto &ar_parm = VIEWER_SETTINGS.arForceParameters;
-                int fid, vid;
-                Eigen::Vector3d pos, coords;
-                Eigen::Vector3i vids;
-                if (CurrentMouseSurfPos(viewer, V, F, pos, coords, fid, vid)) {
-                    vids = F.row(fid);
-                    Eigen::Vector3d vn;
-                    ar_parm.curr_surf_pos = pos;
-                    if (ar_parm.past_mouse_init) {
-                        ar_parm.curr_surf_vel = (ar_parm.curr_surf_pos - ar_parm.past_surf_pos) / ar_parm.time_step_size;
-                    }
-                    else {
-                        ar_parm.curr_surf_vel.setZero();
-                        ar_parm.past_mouse_init = true;
-                    }
-                    ar_parm.past_surf_pos = ar_parm.curr_surf_pos;
-                    vn = ar_parm.curr_surf_vel;
-                    if (vn.norm() > 1E-10) vn/=vn.norm();
-                    ForceMessage<double> force;
-                    GetModalForceFace(N_modesAudible, *modes, vids, coords, vn, force);
-                    solver->enqueueForceMessage(force);
-                    VIEWER_SETTINGS.hitVidCache = vid;
-                    viewer.data().set_colors(C);
+    viewer.callback_post_draw = [&](igl::opengl::glfw::Viewer &viewer) {
+        if (VIEWER_SETTINGS.loadingNewModel) return false;
+
+        // detect sustained force stuff with mouse
+        if (VIEWER_SETTINGS.sustainedForceActive &&
+            viewer.down) {
+            auto &ar_parm = VIEWER_SETTINGS.arForceParameters;
+            int fid, vid;
+            Eigen::Vector3d pos, coords;
+            Eigen::Vector3i vids;
+            if (CurrentMouseSurfPos(viewer, V, F, pos, coords, fid, vid)) {
+                vids = F.row(fid);
+                Eigen::Vector3d vn;
+                ar_parm.curr_surf_pos = pos;
+                if (ar_parm.past_mouse_init) {
+                    ar_parm.curr_surf_vel = (ar_parm.curr_surf_pos - ar_parm.past_surf_pos) / ar_parm.time_step_size;
+                } else {
+                    ar_parm.curr_surf_vel.setZero();
+                    ar_parm.past_mouse_init = true;
                 }
-                else {
-                    ar_parm.past_mouse_init = false;
-                }
+                ar_parm.past_surf_pos = ar_parm.curr_surf_pos;
+                vn = ar_parm.curr_surf_vel;
+                if (vn.norm() > 1E-10) vn/=vn.norm();
+
+                ForceMessage<double> force;
+                GetModalForceFace(N_modesAudible, *modes, vids, coords, vn, force);
+                solver->enqueueForceMessage(force);
+                VIEWER_SETTINGS.hitVidCache = vid;
+                viewer.data().set_colors(C);
+            } else {
+                ar_parm.past_mouse_init = false;
             }
-            // PA stuff
-            if (!PA_STREAM_STARTED) {
-                CHECK_PA_LAUNCH(Pa_StartStream(stream));
-                PA_STREAM_STARTED = true;
-            }
-            // update the transfer
-            static Eigen::Matrix<double,3,1> last_camera_pos;
-            const Eigen::Matrix<double,3,1> camera_pos = getCameraWorldPosition(viewer.core(main_view));
-            static bool cache_initialize = false;
-            if (camera_pos != last_camera_pos || !cache_initialize) {
-                solver->computeTransfer(camera_pos);
-                last_camera_pos = camera_pos;
-                cache_initialize = true;
-            }
-            return false;
-        };
+        }
+        // PA stuff
+        if (!PA_STREAM_STARTED) {
+            CHECK_PA_LAUNCH(Pa_StartStream(stream));
+            PA_STREAM_STARTED = true;
+        }
+        // update the transfer
+        static Eigen::Matrix<double,3,1> last_camera_pos;
+        const Eigen::Matrix<double,3,1> camera_pos = getCameraWorldPosition(viewer.core(main_view));
+        static bool cache_initialize = false;
+        if (camera_pos != last_camera_pos || !cache_initialize) {
+            solver->computeTransfer(camera_pos);
+            last_camera_pos = camera_pos;
+            cache_initialize = true;
+        }
+        return false;
+    };
 
     if (parser->get<std::string>("tex") != FILE_NOT_EXIST) {
         VIEWER_SETTINGS.useTextures = true;
@@ -1001,8 +958,7 @@ int main(int argc, char **argv) {
         igl::opengl::create_shader_program(mesh_vertex_shader_string, mesh_fragment_shader_string, {}, viewer.data(obj_id).meshgl.shader_mesh);
         viewer.launch_rendering(true);
         viewer.launch_shut();
-    }
-    else {
+    } else {
         viewer.launch(true, false, "RT Modal Sound");
     }
     CHECK_PA_LAUNCH(Pa_StopStream(stream));
