@@ -500,8 +500,6 @@ int main(int argc, char **argv) {
         main_view = viewer.core_list[0].id;
         hud_view = viewer.core_list[1].id;
         mode_view = viewer.core_list[2].id;
-        // viewer.core(hud_view).update_transform_matrices = false;
-        // viewer.core(mode_view).update_transform_matrices = false;
         obj_id = viewer.data_list[0].id;
         sph_id = viewer.data_list[1].id;
         mod_id = viewer.data_list[2].id;
@@ -852,41 +850,6 @@ int main(int argc, char **argv) {
                 igl::colormap(igl::COLOR_MAP_TYPE_JET,transferVals,true,C_ball);
             }
             viewer.data(1).set_colors(C_ball);
-            // handling the matrices myself
-            for (int ii=0; ii<2; ++ii) {
-                auto &core = viewer.core(main_view);
-                auto &core_slave = ii == 0 ? viewer.core(hud_view) : viewer.core(mode_view);
-                core_slave.view = Eigen::Matrix4f::Identity();
-                core_slave.proj = Eigen::Matrix4f::Identity();
-                core_slave.norm = Eigen::Matrix4f::Identity();
-
-                float width = core_slave.viewport(2);
-                float height = core_slave.viewport(3);
-                // Set view
-                igl::look_at(core.camera_eye, core.camera_center, core.camera_up, core_slave.view);
-                if (ii==0) {
-                    core_slave.view = core_slave.view
-                      * (core.trackball_angle * Eigen::Scaling(1.2f)
-                      * Eigen::Translation3f(core.camera_translation + core.camera_base_translation)).matrix();
-                } else {
-                    float zoom = core.camera_zoom*core.camera_base_zoom * MODAL_VIEWER.zoom;
-                    core_slave.view = core_slave.view
-                      * (core.trackball_angle * Eigen::Scaling(zoom)
-                      * Eigen::Translation3f(core.camera_translation + core.camera_base_translation)).matrix();
-                }
-                core_slave.norm = core_slave.view.inverse().transpose();
-
-                // Set projection
-                if (core.orthographic) {
-                  float length = (core.camera_eye - core.camera_center).norm();
-                  float h = tan(core.camera_view_angle/360.0 * igl::PI)*length;
-                  igl::ortho(-h*width/height, h*width/height, -h, h, core.camera_dnear, core.camera_dfar,core_slave.proj);
-                } else {
-                  float fH = tan(core.camera_view_angle / 360.0 * igl::PI) * core.camera_dnear;
-                  float fW = fH * (double)width/(double)height;
-                  igl::frustum(-fW, fW, -fH, fH, core.camera_dnear, core.camera_dfar, core_slave.proj);
-                }
-            }
             // update mode viewer
             viewer.data(mod_id).set_visible(VIEWER_SETTINGS.drawModes, mode_view);
             std::unique_lock<std::mutex> lockLoad(VIEWER_SETTINGS.mutexLoadingNewModel);
