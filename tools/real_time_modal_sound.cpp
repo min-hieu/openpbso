@@ -1,12 +1,10 @@
-#include <set>
-#include <ctime>
 #include <thread>
-#include <pthread.h>
 #include <string>
 #include <deque>
 #include <chrono>
 #include <mutex>
 #include <condition_variable>
+
 #include "igl/read_triangle_mesh.h"
 #include "igl/unproject_onto_mesh.h"
 #include "igl/per_vertex_normals.h"
@@ -18,6 +16,7 @@
 #include "igl/file_dialog_open.h"
 #include "igl/colormap.h"
 #include "igl/png/readPNG.h"
+
 #include "imgui.h"
 #include "config.h"
 #include "ModalMaterial.h"
@@ -29,6 +28,7 @@
 #include "modal_solver.h"
 #include "forces.h"
 #include "matcap_shader.h"
+
 //##############################################################################
 static bool PA_STREAM_STARTED = false;
 //##############################################################################
@@ -136,12 +136,12 @@ struct ModalViewer {
         }
     }
 } MODAL_VIEWER;
+
 float ViewerSettings::renderFaceTime = 1.5f;
 ForceType ViewerSettings::forceType = ForceType::PointForce;
 //##############################################################################
-Eigen::Matrix<double,3,1> getCameraWorldPosition(
-    igl::opengl::ViewerCore &core) {
-    Eigen::Matrix<float,4,1> eye;
+Eigen::Matrix<double, 3, 1> getCameraWorldPosition(igl::opengl::ViewerCore &core) {
+    Eigen::Matrix<float, 4, 1> eye;
     eye << core.camera_eye, 1.0f;
     return (core.view.inverse() * eye).cast<double>().head(3);
 }
@@ -321,10 +321,6 @@ void LoadNewModel(
     unsigned int &main_view, unsigned int &hud_view,
     int &N_modesAudible,
     cli::Parser *parser,
-    Eigen::Matrix<unsigned char,-1,-1> &tex_R,
-    Eigen::Matrix<unsigned char,-1,-1> &tex_G,
-    Eigen::Matrix<unsigned char,-1,-1> &tex_B,
-    Eigen::Matrix<unsigned char,-1,-1> &tex_A,
     igl::opengl::glfw::Viewer &viewer,
     std::unique_ptr<ModalMaterial<double>> &material,
     std::unique_ptr<ModeData<double>> &modes,
@@ -344,6 +340,7 @@ void LoadNewModel(
         std::cout << "loading new model " << meta << " ..." << std::flush;
         std::ifstream stream(meta.c_str());
         if (!stream) return;
+
         std::string obj_file_tmp, mod_file_tmp, mat_file_tmp, fat_path_tmp;
         std::getline(stream, obj_file_tmp);
         std::getline(stream, mod_file_tmp);
@@ -373,8 +370,9 @@ void LoadNewModel(
             MODAL_VIEWER.F0 = F;
             MODAL_VIEWER.ind = -1;
             if (VIEWER_SETTINGS.useTextures) {
+                Eigen::Matrix<unsigned char,-1,-1> tex_R,tex_G,tex_B,tex_A;
                 igl::png::readPNG(parser->get<std::string>("tex"), tex_R, tex_G, tex_B, tex_A);
-                viewer.data(obj_id).set_texture(tex_R,tex_G,tex_B,tex_A);
+                viewer.data(obj_id).set_texture(tex_R, tex_G, tex_B, tex_A);
                 viewer.data(obj_id).set_face_based(false);
                 viewer.data(obj_id).show_lines = false;
                 viewer.data(obj_id).show_texture = true;
@@ -438,7 +436,6 @@ int main(int argc, char **argv) {
     // read geometry
     Eigen::MatrixXd V, VN, V_ball, transfer_ball;
     Eigen::MatrixXi F, F_ball;
-    Eigen::Matrix<unsigned char,-1,-1> tex_R,tex_G,tex_B,tex_A;
     Eigen::VectorXd transferVals;
     Eigen::Vector3d pos;
     igl::read_triangle_mesh(obj_file, V, F);
@@ -585,10 +582,6 @@ int main(int argc, char **argv) {
                 hud_view,
                 N_modesAudible,
                 parser,
-                tex_R,
-                tex_G,
-                tex_B,
-                tex_A,
                 viewer,
                 material,
                 modes,
@@ -891,7 +884,6 @@ int main(int argc, char **argv) {
                 main_view, hud_view,
                 N_modesAudible,
                 parser,
-                tex_R, tex_G, tex_B, tex_A,
                 viewer, material, modes, solver);
             return true;
         } else if (key=='d' || key=='D') {
@@ -955,8 +947,9 @@ int main(int argc, char **argv) {
 
     if (parser->get<std::string>("tex") != FILE_NOT_EXIST) {
         VIEWER_SETTINGS.useTextures = true;
+        Eigen::Matrix<unsigned char,-1,-1> tex_R, tex_G, tex_B, tex_A;
         igl::png::readPNG(parser->get<std::string>("tex"), tex_R, tex_G, tex_B, tex_A);
-        viewer.data(obj_id).set_texture(tex_R,tex_G,tex_B,tex_A);
+        viewer.data(obj_id).set_texture(tex_R, tex_G, tex_B, tex_A);
         viewer.data(obj_id).set_face_based(false);
         viewer.data(obj_id).show_lines = false;
         viewer.data(obj_id).show_texture = true;
