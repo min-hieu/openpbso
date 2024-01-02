@@ -19,8 +19,8 @@ find_package(PkgConfig REQUIRED)
 pkg_check_modules(PORTAUDIO2 REQUIRED portaudio-2.0)
 set(PORTAUDIO_LIBRARIES ${PORTAUDIO2_LIBRARY_DIRS}/libportaudio.dylib)
 
-find_package(Protobuf REQUIRED CONFIG)
-set(Protobuf_LIBRARIES protobuf::libprotobuf)
+find_package(Protobuf REQUIRED)
+include_directories(${PROTOBUF_INCLUDE_DIRS})
 
 # Project files
 file(GLOB SRCFILES *.cpp *.cc)

@@ -1,1 +1,0 @@
-cd build && ./real_time_modal_sound_bin -d ../model/model_00000 -name 00000
