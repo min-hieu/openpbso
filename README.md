@@ -9,14 +9,27 @@ functionalities to synthesize rigid-body sound models such as those built by the
 Below is a list of dependencies along with the version that are tested:
 * [CMake](https://cmake.org/): 3.20
 * [Eigen](http://eigen.tuxfamily.org/index.php?title=Main_Page): 3.2.10
-* [Libigl](http://libigl.github.io/libigl/): 2.5 **(unmodified)**
+* [Libigl](http://libigl.github.io/libigl/): 2.5 
 * [PortAudio](http://www.portaudio.com/): (2.1)
   [here](http://www.portaudio.com/archives/pa_stable_v190600_20161030.tgz)
 * [Protobuf](https://developers.google.com/protocol-buffers): 3.7.1
 
 on MacOS, you can install via Homebrew 
 ```
-brew install portaudio eigen3 protobuf@3 cmake
+brew install portaudio eigen3 cmake
+```
+
+for protobuf, you can build from source following [protobuf@3.7.1 guide](https://github.com/protocolbuffers/protobuf/blob/v3.7.1/src/README.md)
+```
+git clone https://github.com/protocolbuffers/protobuf.git
+cd protobuf
+git switch -c tags/v3.7.1
+git submodule update --init --recursive
+./autogen.sh
+./configure
+make -j16
+make check # you can skip this 
+sudo make install
 ```
 
 ## Build
