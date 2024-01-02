@@ -16,7 +16,7 @@ Below is a list of dependencies along with the version that are tested:
 
 on MacOS, you can install via Homebrew 
 ```
-brew install portaudio eigen3 protobuf cmake
+brew install portaudio eigen3 protobuf@3 cmake
 ```
 
 ## Build
